@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat</title>
+    <!-- 外部依赖 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/highlight.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="sidebar">
+    <button id="configTab" class="settings-button">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+    </button>
+</div>
+
+<div id="configPanel" class="config-panel">
+    <div class="config-header">
+        <h2>设置</h2>
+    </div>
+    <div class="config-content">
+        <div class="config-group">
+            <label for="apiKey">API Key</label>
+            <input type="password" id="apiKey" placeholder="输入你的 API Key"/>
+            <div class="helper-text">请前往Llama平台申请API Key</div>
+        </div>
+        <div class="config-group">
+            <label for="model">模型选择</label>
+            <select id="model"></select>
+        </div>
+    </div>
+</div>
+
+<div class="dialog-overlay" id="overlay"></div>
+<div class="confirm-dialog" id="confirmDialog">
+    <div class="dialog-content">
+        <p>修改配置将会重置当前的对话内容，是否继续？</p>
+        <div class="dialog-buttons">
+            <button class="dialog-button cancel" id="cancelConfig">取消</button>
+            <button class="dialog-button confirm" id="confirmConfig">确认</button>
+        </div>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="chat-container">
+        <div id="chatMessages" class="messages"></div>
+        <div class="input-container">
+            <div class="input-wrapper">
+                    <textarea
+                            id="userInput"
+                            class="message-input"
+                            placeholder="输入消息..."
+                            rows="1"
+                    ></textarea>
+                <button id="sendButton" class="send-button" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13" stroke-linecap="round"/>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 模型配置
+    const MODELS_CONFIG = [
+        {
+            value: 'deepseek-v3',
+            label: 'DeepSeek-v3',
+            default: true
+        },
+        {
+            value: 'deepseek-r1',
+            label: 'DeepSeek-r1'
+        },
+        {
+            value: 'llama3.1-405b',
+            label: 'Llama-3.1'
+        },
+        {
+            value: 'Qwen1.5-110B-Chat',
+            label: 'Qwen1.5-Chat'
+        },
+        {
+            value: 'Qwen2-72B-Instruct',
+            label: 'Qwen2-Instruct'
+        }
+    ];
+
+    // 工具函数
+    const createElement = (message, isUser = false, modelLabel = '') => {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+
+        if (!isUser) {
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'message-header';
+
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'model-avatar';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'model-name';
+            nameSpan.textContent = modelLabel;
+
+            headerDiv.appendChild(avatarDiv);
+            headerDiv.appendChild(nameSpan);
+            messageDiv.appendChild(headerDiv);
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = marked.parse(message);
+
+        // 代码高亮
+        setTimeout(() => {
+            contentDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }, 0);
+
+        messageDiv.appendChild(contentDiv);
+        return messageDiv;
+    };
+
+    class ChatInterface {
+        constructor() {
+            this.chatMessages = document.getElementById('chatMessages');
+            this.userInput = document.getElementById('userInput');
+            this.sendButton = document.getElementById('sendButton');
+            this.apiKey = '';
+            this.model = MODELS_CONFIG.find(m => m.default)?.value || MODELS_CONFIG[0].value;
+            this.API_URL = 'https://api.llama-api.com/chat/completions';
+            this.messageHistory = [];
+
+            this.setupEventListeners();
+            this.displayWelcomeMessage();
+            this.adjustTextareaHeight();
+        }
+
+        setupEventListeners() {
+            this.sendButton.addEventListener('click', () => this.handleUserMessage());
+
+            this.userInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.handleUserMessage();
+                }
+            });
+
+            this.userInput.addEventListener('input', () => {
+                this.adjustTextareaHeight();
+                this.updateSendButtonState();
+            });
+        }
+
+        adjustTextareaHeight() {
+            const textarea = this.userInput;
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
+
+        updateSendButtonState() {
+            this.sendButton.disabled = !this.userInput.value.trim();
+        }
+
+        displayWelcomeMessage() {
+            const welcomeMessage = `
+# 欢迎使用 AI 助手！
+
+在开始对话之前，请先完成以下步骤：
+
+1. 点击左侧设置图标
+2. 配置您的 API Key
+3. 如果没有 API Key，请前往 Llama 平台申请
+
+准备就绪后，让我们开始对话吧！
+`;
+            const messageElement = createElement(welcomeMessage, false, 'AI Assistant');
+            this.chatMessages.appendChild(messageElement);
+        }
+
+        async handleUserMessage() {
+            const userMessage = this.userInput.value.trim();
+            if (!userMessage) return;
+
+            if (!this.apiKey) {
+                this.displayErrorMessage('请先配置API Key后再开始对话。');
+                return;
+            }
+
+            const currentModel = MODELS_CONFIG.find(m => m.value === this.model);
+            const modelLabel = currentModel ? currentModel.label : 'AI Assistant';
+
+            // 显示用户消息
+            const userMessageElement = createElement(userMessage, true);
+            this.chatMessages.appendChild(userMessageElement);
+
+            // 清空输入框并重置高度
+            this.userInput.value = '';
+            this.adjustTextareaHeight();
+            this.updateSendButtonState();
+
+            // 显示加载动画
+            const loadingElement = this.displayLoadingIndicator();
+
+            try {
+                const response = await this.sendToLlama(userMessage);
+                this.chatMessages.removeChild(loadingElement);
+                const assistantMessageElement = createElement(response, false, modelLabel);
+                this.chatMessages.appendChild(assistantMessageElement);
+            } catch (error) {
+                this.chatMessages.removeChild(loadingElement);
+                this.displayErrorMessage(error.message);
+            }
+
+            // 滚动到底部
+            this.scrollToBottom();
+        }
+
+        displayLoadingIndicator() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'typing-indicator';
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'typing-dot';
+                loadingDiv.appendChild(dot);
+            }
+            this.chatMessages.appendChild(loadingDiv);
+            this.scrollToBottom();
+            return loadingDiv;
+        }
+
+        displayErrorMessage(message) {
+            const errorMessage = `⚠️ ${message}`;
+            const messageElement = createElement(errorMessage, false, 'System');
+            this.chatMessages.appendChild(messageElement);
+            this.scrollToBottom();
+        }
+
+        scrollToBottom() {
+            this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        }
+
+        async sendToLlama(userMessage) {
+            const requestBody = {
+                model: this.model,
+                messages: [
+                    ...this.messageHistory,
+                    { role: "user", content: userMessage }
+                ]
+            };
+
+            try {
+                const response = await fetch(this.API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(this.getErrorMessage(response.status, data.message));
+                }
+
+                // 如果数据格式不正确，返回原始数据以供调试
+                if (!data || !data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                    return `API返回数据格式不正确。原始返回数据：\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+                }
+
+                const assistantMessage = data.choices[0].message?.content;
+
+                if (!assistantMessage) {
+                    return `API返回消息为空。原始返回数据：\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+                }
+
+                // 更新消息历史
+                this.messageHistory.push(
+                    { role: "user", content: userMessage },
+                    { role: "assistant", content: assistantMessage }
+                );
+
+                return assistantMessage;
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        getErrorMessage(status, message) {
+            switch (status) {
+                case 401:
+                    return 'API Key 无效，请检查您的配置。';
+                case 429:
+                    return '请求过于频繁，请稍后再试。';
+                case 413:
+                    return '消息内容过长，请缩短后重试。';
+                case 503:
+                    return '服务暂时不可用，请稍后再试。';
+                default:
+                    return message || '发生未知错误，请稍后重试。';
+            }
+        }
+
+        updateConfig(apiKey, model) {
+            this.apiKey = apiKey;
+            this.model = model;
+            this.messageHistory = [];
+        }
+
+        resetChat() {
+            this.messageHistory = [];
+            this.chatMessages.innerHTML = '';
+            this.displayWelcomeMessage();
+        }
+    }
+
+    class ConfigPanel {
+        constructor(chatInterface) {
+            this.chatInterface = chatInterface;
+            this.panel = document.getElementById('configPanel');
+            this.tab = document.getElementById('configTab');
+            this.apiKeyInput = document.getElementById('apiKey');
+            this.modelSelect = document.getElementById('model');
+            this.confirmDialog = document.getElementById('confirmDialog');
+            this.confirmButton = document.getElementById('confirmConfig');
+            this.cancelButton = document.getElementById('cancelConfig');
+            this.overlay = document.getElementById('overlay');
+
+            this.initializeModelSelect();
+            this.setupEventListeners();
+        }
+
+        initializeModelSelect() {
+            this.modelSelect.innerHTML = MODELS_CONFIG.map(model => `
+            <option value="${model.value}" ${model.default ? 'selected' : ''}>
+                ${model.label}
+            </option>
+        `).join('');
+        }
+
+        setupEventListeners() {
+            this.tab.addEventListener('click', () => this.togglePanel());
+
+            this.apiKeyInput.addEventListener('change', () => this.showConfirmDialog());
+            this.modelSelect.addEventListener('change', () => this.showConfirmDialog());
+
+            this.confirmButton.addEventListener('click', () => this.handleConfigConfirm());
+            this.cancelButton.addEventListener('click', () => this.handleConfigCancel());
+            this.overlay.addEventListener('click', () => this.handleConfigCancel());
+
+            document.addEventListener('click', (e) => {
+                if (this.panel.classList.contains('active') &&
+                    !this.panel.contains(e.target) &&
+                    !this.tab.contains(e.target)) {
+                    this.togglePanel();
+                }
+            });
+        }
+
+        togglePanel() {
+            this.panel.classList.toggle('active');
+        }
+
+        showConfirmDialog() {
+            this.confirmDialog.classList.add('active');
+            this.overlay.classList.add('active');
+        }
+
+        hideConfirmDialog() {
+            this.confirmDialog.classList.remove('active');
+            this.overlay.classList.remove('active');
+        }
+
+        handleConfigConfirm() {
+            this.hideConfirmDialog();
+            this.chatInterface.resetChat();
+            this.chatInterface.updateConfig(
+                this.apiKeyInput.value,
+                this.modelSelect.value
+            );
+            this.togglePanel();
+        }
+
+        handleConfigCancel() {
+            this.hideConfirmDialog();
+            this.apiKeyInput.value = this.chatInterface.apiKey;
+            this.modelSelect.value = this.chatInterface.model;
+        }
+    }
+
+    // 初始化应用
+    document.addEventListener('DOMContentLoaded', () => {
+        const chatInterface = new ChatInterface();
+        new ConfigPanel(chatInterface);
+    });
+</script>
+</body>
+</html>
